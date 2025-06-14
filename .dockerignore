@@ -1,0 +1,20 @@
+# .dockerignore
+
+# Nix-related files
+flake.nix
+flake.lock
+.direnv/
+result*
+
+# Python virtual environment (if created locally)
+.venv/
+*.pyc
+__pycache__/
+
+# Git files
+.git/
+.gitignore
+
+# Docker files
+Dockerfile
+.dockerignore
