@@ -3,14 +3,14 @@ name = "kawsay"
 version = "0.1.0"
 description = "Serves student outcome predictions."
 authors = ["Santiago <santiago@example.com>"]
-package-mode = false
+packages = [{ include = "kawsay", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.115.0"
 uvicorn = {extras = ["standard"], version = "^0.34.0"}
 numpy = "^2.3.0"
-onnxruntime = "^1.18.0"
+onnxruntime = "^1.22.0"
 pandas = "^2.2.2"
 
 [build-system]

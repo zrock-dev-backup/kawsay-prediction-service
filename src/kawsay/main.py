@@ -4,9 +4,9 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-from .models.domain import PredictionRequest, PredictionResponse # <- FIX
-from .services.prediction_service import PredictionService      # <- FIX
-from .infrastructure.onnx_model import StudentOutcomePredictor  # <- FIX
+from kawsay.models.domain import PredictionRequest, PredictionResponse
+from kawsay.services.prediction_service import PredictionService
+from kawsay.infrastructure.onnx_model import StudentOutcomePredictor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
