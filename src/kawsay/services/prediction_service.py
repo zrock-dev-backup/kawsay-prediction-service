@@ -8,6 +8,7 @@ from kawsay.models.domain import (
     PredictionResponse,
     Prediction,
     PredictedOutcome,
+    GradeRecord,
 )
 from kawsay.infrastructure.onnx_model import StudentOutcomePredictor
 
@@ -16,38 +17,34 @@ class PredictionService:
 
     def __init__(self, predictor: StudentOutcomePredictor):
         self.predictor = predictor
-        self.PASSING_THRESHOLD = 70.0 # Domain knowledge: grade required to pass a course
 
     def generate_predictions(self, request: PredictionRequest) -> PredictionResponse:
         """
-        Processes a prediction request to generate outcomes for each student.
-        1. Performs feature engineering from raw grade records.
-        2. Runs the engineered features through the model.
+        Processes a prediction request to generate outcomes for each record.
+        1. Prepares raw records into numpy arrays for the model.
+        2. Runs the inputs through the model.
         3. Generates human-readable drivers for each prediction.
         4. Assembles the final response object.
         """
-        # 1. Feature Engineering
-        features_df, student_ids = self._engineer_features(request)
+        # 1. Prepare model inputs
+        model_inputs = self._prepare_model_inputs(request.records)
         
         # 2. Model Prediction
-        # The model expects a numpy array, not a DataFrame
-        feature_array = features_df.to_numpy()
-        labels, probabilities = self.predictor.predict(feature_array)
+        labels, probabilities = self.predictor.predict(model_inputs)
 
         # 3. Driver Generation & Response Assembly
         predictions: List[Prediction] = []
-        for i, student_id in enumerate(student_ids):
+        for i, record in enumerate(request.records):
             outcome = PredictedOutcome.PASS if labels[i] == 1 else PredictedOutcome.FAIL
-            confidence = float(probabilities[i][int(labels[i])]) # Probability of the predicted class
-            
-            # Get the raw features for this student to generate drivers
-            student_features = features_df.iloc[i].to_dict()
+            confidence = float(probabilities[i][int(labels[i])])
 
-            drivers = self._generate_drivers(outcome, student_features)
+            drivers = self._generate_drivers(outcome, record)
 
             predictions.append(
                 Prediction(
-                    studentId=student_id,
+                    studentId=record.studentId,
+                    courseId=record.courseId,
+                    semester=record.semester,
                     predictedOutcome=outcome,
                     confidence=confidence,
                     drivers=drivers,
@@ -56,47 +53,33 @@ class PredictionService:
 
         return PredictionResponse(predictions=predictions)
 
-    def _engineer_features(self, request: PredictionRequest) -> tuple[pd.DataFrame, list]:
-        """
-        Transforms raw grade records into a feature matrix for the model.
-        This is the most critical pre-processing step.
-        """
-        df = pd.DataFrame([r.model_dump() for r in request.records])
+    def _prepare_model_inputs(self, records: List[GradeRecord]) -> Dict[str, np.ndarray]:
+        """Transforms a list of Pydantic models into a dictionary of numpy arrays."""
+        df = pd.DataFrame([r.model_dump() for r in records])
         
-        # Aggregate data per student
-        student_agg = df.groupby('studentId').agg(
-            avg_grade=('finalGrade', 'mean'),
-            course_count=('courseId', 'count'),
-            min_grade=('finalGrade', 'min'),
-            failing_courses_count=('finalGrade', lambda x: (x < self.PASSING_THRESHOLD).sum())
-        ).reset_index()
+        # The keys MUST match the model's input names from the graph
+        input_dict = {
+            'courseId': df[['courseId']].to_numpy(),
+            'semester': df[['semester']].to_numpy(),
+            'grade_lab': df[['grade_lab']].to_numpy(),
+            'grade_masterclass': df[['grade_masterclass']].to_numpy(),
+        }
+        return input_dict
 
-        # The order of columns MUST match the model's training order.
-        # Let's assume the model was trained on: [avg_grade, failing_courses_count]
-        feature_columns = ['avg_grade', 'failing_courses_count']
-        features_df = student_agg[feature_columns]
-        
-        # Keep track of the student IDs in the correct order
-        student_ids = student_agg['studentId'].tolist()
-
-        return features_df, student_ids
-
-    def _generate_drivers(self, outcome: PredictedOutcome, features: Dict[str, Any]) -> List[str]:
-        """
-        Generates human-readable explanations for a prediction based on simple rules.
-        This simulates a real-world explainability (XAI) feature.
-        """
+    def _generate_drivers(self, outcome: PredictedOutcome, record: GradeRecord) -> List[str]:
+        """Generates human-readable explanations based on the record's data."""
         drivers = []
-        avg_grade = features.get('avg_grade', 0)
-        failing_courses = features.get('failing_courses_count', 0)
+        avg_grade = (record.grade_lab + record.grade_masterclass) / 2
 
         if outcome == PredictedOutcome.PASS:
-            drivers.append(f"High average grade ({avg_grade:.1f})")
-            if failing_courses == 0:
-                drivers.append("No failing grades detected")
+            drivers.append(f"Strong overall grade ({avg_grade:.1f})")
+            if record.grade_lab > 85 and record.grade_masterclass > 85:
+                drivers.append("Excellent performance in both lab and masterclass.")
         else: # FAIL
-            drivers.append(f"Low average grade ({avg_grade:.1f})")
-            if failing_courses > 0:
-                drivers.append(f"{int(failing_courses)} course(s) below passing threshold")
+            drivers.append(f"Low overall grade ({avg_grade:.1f})")
+            if record.grade_lab < 70:
+                drivers.append(f"Lab grade ({record.grade_lab:.1f}) is below passing threshold.")
+            if record.grade_masterclass < 70:
+                drivers.append(f"Masterclass grade ({record.grade_masterclass:.1f}) is below passing threshold.")
         
         return drivers
