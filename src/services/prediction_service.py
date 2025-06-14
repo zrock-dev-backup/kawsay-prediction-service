@@ -2,14 +2,14 @@ import pandas as pd
 import numpy as np
 from typing import List, Dict, Any
 
-from kawsay.models.domain import (
+from ..models.domain import ( # <- FIX (use .. to go up one level from services/ to src/)
     PredictionRequest,
     PredictionResponse,
     Prediction,
     PredictedOutcome,
     GradeRecord,
 )
-from kawsay.infrastructure.onnx_model import StudentOutcomePredictor
+from ..infrastructure.onnx_model import StudentOutcomePredictor # <- FIX
 
 class PredictionService:
     def __init__(self, predictor: StudentOutcomePredictor):
